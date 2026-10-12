@@ -63,7 +63,7 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .general-note-section {
-      display: none; /* データ読み込み後に表示 */
+      display: none;
     }
     .section-label {
       font-size: 0.85rem;
@@ -96,6 +96,17 @@
       margin-top: 8px;
       cursor: pointer;
     }
+    button.save-data-btn {
+      background-color: #5856d6;
+      margin-bottom: 8px;
+      display: none;
+    }
+    button.load-data-file-btn {
+      background-color: #8e8e93;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      padding: 8px;
+    }
     button.copy-prompt-btn {
       background-color: #5856d6;
       margin-top: 6px;
@@ -104,11 +115,15 @@
     }
     button.share-btn {
       background-color: #34c759;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
+      display: none;
+    }
+    button.fulltext-btn {
+      background-color: #ff9500;
+      margin-bottom: 8px;
       display: none;
     }
     
-    /* 使い方表示スタイル */
     .guide-title {
       font-size: 0.95rem;
       font-weight: bold;
@@ -158,6 +173,10 @@
       opacity: 0.55;
       background: #e9e9eb;
     }
+    .sentence-card.cut .sentence-text {
+      text-decoration: line-through;
+      color: #8e8e93;
+    }
     .sentence-header {
       display: flex;
       align-items: flex-start;
@@ -192,7 +211,37 @@
     .sentence-text {
       font-size: 0.95rem;
       line-height: 1.4;
+      user-select: text;
+      -webkit-user-select: text;
     }
+    
+    /* 単語ハイライトスタイル */
+    mark.hl-yellow { background-color: #fff3a8; color: #000; border-radius: 2px; padding: 0 2px; }
+    mark.hl-green { background-color: #b4f8c8; color: #000; border-radius: 2px; padding: 0 2px; }
+    mark.hl-red { background-color: #ffb7b2; color: #000; border-radius: 2px; padding: 0 2px; }
+
+    .marker-tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: #8e8e93;
+      margin-top: 2px;
+    }
+    .marker-btn {
+      width: auto;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      margin-top: 0;
+      border-radius: 4px;
+      color: #000;
+      border: 1px solid var(--border);
+    }
+    .marker-btn.yellow { background-color: #fff3a8; }
+    .marker-btn.green { background-color: #b4f8c8; }
+    .marker-btn.red { background-color: #ffb7b2; }
+    .marker-btn.clear { background-color: #ffffff; color: #3a3a3c; }
+
     .note-input {
       width: 100%;
       height: 36px;
@@ -232,9 +281,10 @@
   <div class="input-section" id="input-container">
     <textarea id="tsv-input" placeholder="Geminiが出力したTSVデータをここに貼り付けてください"></textarea>
     <button onclick="loadData()">データを読み込む</button>
+    <button class="load-data-file-btn" onclick="document.getElementById('file-input').click()">保存済みの編集データを開く (.json)</button>
+    <input type="file" id="file-input" accept=".json" style="display:none;" onchange="loadSavedFile(event)">
   </div>
 
-  <!-- ★ 追加：このアプリの使用方法エリア -->
   <div class="guide-section" id="guide-container">
     <div class="guide-title">このアプリの使用方法</div>
     <ol class="guide-ol">
@@ -257,14 +307,14 @@
     </ol>
   </div>
 
-  <!-- リスト以外の総括的な注記・指示メモ欄 -->
   <div class="general-note-section" id="general-note-container">
     <span class="section-label">リスト以外の総括的な注記・指示メモ</span>
     <textarea id="general-note-input" class="general-note-input" placeholder="例：オープニングとエンディングにBGMを入れてください、全体的にテンポ感を意識して間を詰めてください 等"></textarea>
   </div>
 
-  <!-- 共有ボタン -->
+  <button id="save-data-btn" class="save-data-btn" onclick="saveDataFile()">編集状態を保存 (.json)</button>
   <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示をLINE・メールで送信</button>
+  <button id="fulltext-btn" class="fulltext-btn" onclick="copyFullText()">全文表示テキスト（装飾・削除線付き）を出力</button>
 
   <div class="sentence-list" id="sentence-list"></div>
 
@@ -315,6 +365,7 @@
               durationStr: durationStr,
               startTime: startStr,
               text: textStr,
+              formattedHtml: textStr,
               isCut: false,
               note: ''
             });
@@ -323,13 +374,19 @@
       });
 
       if (sentences.length > 0) {
-        document.getElementById('input-container').style.display = 'none';
-        document.getElementById('guide-container').style.display = 'none'; // データ読み込み後は使い方も自動非表示でスッキリ
-        document.getElementById('general-note-container').style.display = 'block';
-        document.getElementById('share-btn').style.display = 'block';
+        showEditAppScreen();
         renderList();
         updateCalculations();
       }
+    }
+
+    function showEditAppScreen() {
+      document.getElementById('input-container').style.display = 'none';
+      document.getElementById('guide-container').style.display = 'none';
+      document.getElementById('general-note-container').style.display = 'block';
+      document.getElementById('save-data-btn').style.display = 'block';
+      document.getElementById('share-btn').style.display = 'block';
+      document.getElementById('fulltext-btn').style.display = 'block';
     }
 
     function renderList() {
@@ -348,7 +405,14 @@
                 <span class="sentence-no">No.${index + 1}</span>
                 <span>[${item.startTime}] 所要時間: ${item.durationStr}</span>
               </div>
-              <div class="sentence-text">${item.text}</div>
+              <div class="sentence-text" id="text-${index}">${item.formattedHtml}</div>
+              <div class="marker-tools">
+                <span>範囲選択してマーカー:</span>
+                <button class="marker-btn yellow" onclick="applyMarker(${index}, 'yellow')">黄</button>
+                <button class="marker-btn green" onclick="applyMarker(${index}, 'green')">緑</button>
+                <button class="marker-btn red" onclick="applyMarker(${index}, 'red')">赤</button>
+                <button class="marker-btn clear" onclick="clearMarker(${index})">クリア</button>
+              </div>
             </div>
           </div>
           <input type="text" class="note-input" placeholder="注記・補足メモ（例：部分カット、単語調整等）" 
@@ -368,6 +432,34 @@
       sentences[index].note = val;
     }
 
+    function applyMarker(index, colorClass) {
+      const selection = window.getSelection();
+      if (!selection.rangeCount || selection.isCollapsed) {
+        alert('テキスト上でマーキングしたい文字を指で選択してください。');
+        return;
+      }
+
+      const range = selection.getRangeAt(0);
+      const textEl = document.getElementById(`text-${index}`);
+
+      if (textEl && textEl.contains(range.commonAncestorContainer)) {
+        const mark = document.createElement('mark');
+        mark.className = `hl-${colorClass}`;
+        try {
+          range.surroundContents(mark);
+          sentences[index].formattedHtml = textEl.innerHTML;
+          selection.removeAllRanges();
+        } catch (e) {
+          alert('選択範囲が他のタグと重なっています。単語単位で選択してください。');
+        }
+      }
+    }
+
+    function clearMarker(index) {
+      sentences[index].formattedHtml = sentences[index].text;
+      renderList();
+    }
+
     function updateCalculations() {
       let totalSec = 0;
       let cutSec = 0;
@@ -384,6 +476,54 @@
       document.getElementById('total-time').innerText = secondsToTime(totalSec);
       document.getElementById('cut-time').innerText = secondsToTime(cutSec);
       document.getElementById('remain-time').innerText = secondsToTime(remainSec);
+    }
+
+    // ★ 編集状態の保存機能（JSON形式でダウンロード）
+    function saveDataFile() {
+      const generalNote = document.getElementById('general-note-input').value;
+      const exportData = {
+        generalNote: generalNote,
+        sentences: sentences
+      };
+
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const today = new Date().toISOString().split('T')[0];
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `podcast_edit_${today}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // ★ 保存済み編集データの読み込み・復元機能
+    function loadSavedFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const importedData = JSON.parse(e.target.result);
+          if (importedData && Array.isArray(importedData.sentences)) {
+            sentences = importedData.sentences;
+            document.getElementById('general-note-input').value = importedData.generalNote || '';
+            showEditAppScreen();
+            renderList();
+            updateCalculations();
+            alert('保存された編集状態を正常に読み込みました！');
+          } else {
+            alert('無効な編集データファイルです。');
+          }
+        } catch (err) {
+          alert('ファイルの読み込みに失敗しました。');
+        }
+      };
+      reader.readAsText(file);
     }
 
     async function shareResults() {
@@ -446,6 +586,33 @@
       } else {
         navigator.clipboard.writeText(text);
         alert('カット指示テキストをクリップボードにコピーしました。LINE等に貼り付けて送信してください。');
+      }
+    }
+
+    function copyFullText() {
+      let fullText = `【ポッドキャスト全文確認テキスト】\n\n`;
+
+      sentences.forEach((s, idx) => {
+        let plainText = s.formattedHtml;
+
+        plainText = plainText.replace(/<mark class="hl-yellow">(.*?)<\/mark>/g, '[黄:$1]');
+        plainText = plainText.replace(/<mark class="hl-green">(.*?)<\/mark>/g, '[緑:$1]');
+        plainText = plainText.replace(/<mark class="hl-red">(.*?)<\/mark>/g, '[赤:$1]');
+        plainText = plainText.replace(/<[^>]+>/g, '');
+
+        if (s.isCut) {
+          plainText = plainText.split('').map(char => char + '\u0336').join('') + ' 【削除】';
+        }
+
+        fullText += `No.${idx + 1} [${s.startTime}] ${plainText}\n`;
+      });
+
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(fullText).then(() => {
+          alert('取り消し線・装飾付きの全文テキストをクリップボードにコピーしました！');
+        }).catch(err => {
+          alert('コピーに失敗しました。');
+        });
       }
     }
   </script>
