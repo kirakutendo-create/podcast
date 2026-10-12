@@ -230,12 +230,13 @@
     }
     .marker-btn {
       width: auto;
-      padding: 2px 10px;
+      padding: 4px 12px;
       font-size: 0.75rem;
       margin-top: 0;
       border-radius: 4px;
       color: #000;
       border: 1px solid var(--border);
+      touch-action: manipulation;
     }
     .marker-btn.yellow { background-color: #fff3a8; }
     .marker-btn.green { background-color: #b4f8c8; }
@@ -313,13 +314,30 @@
   </div>
 
   <button id="save-data-btn" class="save-data-btn" onclick="saveDataFile()">編集状態を保存 (.json)</button>
-  <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示をLINE・メールで送信</button>
+  <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示をLINE・メール等で送信 / コピー</button>
   <button id="fulltext-btn" class="fulltext-btn" onclick="copyFullText()">全文表示テキスト（装飾・削除線付き）を出力</button>
 
   <div class="sentence-list" id="sentence-list"></div>
 
   <script>
     let sentences = [];
+    let savedRange = null;
+    let savedIndex = null;
+
+    document.addEventListener('selectionchange', () => {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        const range = selection.getRangeAt(0);
+        for (let i = 0; i < sentences.length; i++) {
+          const textEl = document.getElementById(`text-${i}`);
+          if (textEl && textEl.contains(range.commonAncestorContainer)) {
+            savedRange = range.cloneRange();
+            savedIndex = i;
+            break;
+          }
+        }
+      }
+    });
 
     function timeToSeconds(timeStr) {
       if (!timeStr) return 0;
@@ -408,10 +426,10 @@
               <div class="sentence-text" id="text-${index}">${item.formattedHtml}</div>
               <div class="marker-tools">
                 <span>範囲選択してマーカー:</span>
-                <button class="marker-btn yellow" onclick="applyMarker(${index}, 'yellow')">黄</button>
-                <button class="marker-btn green" onclick="applyMarker(${index}, 'green')">緑</button>
-                <button class="marker-btn red" onclick="applyMarker(${index}, 'red')">赤</button>
-                <button class="marker-btn clear" onclick="clearMarker(${index})">クリア</button>
+                <button type="button" class="marker-btn yellow" onmousedown="event.preventDefault()" onclick="applyMarker(${index}, 'yellow')">黄</button>
+                <button type="button" class="marker-btn green" onmousedown="event.preventDefault()" onclick="applyMarker(${index}, 'green')">緑</button>
+                <button type="button" class="marker-btn red" onmousedown="event.preventDefault()" onclick="applyMarker(${index}, 'red')">赤</button>
+                <button type="button" class="marker-btn clear" onmousedown="event.preventDefault()" onclick="clearMarker(${index})">クリア</button>
               </div>
             </div>
           </div>
@@ -433,30 +451,43 @@
     }
 
     function applyMarker(index, colorClass) {
+      let targetRange = null;
       const selection = window.getSelection();
-      if (!selection.rangeCount || selection.isCollapsed) {
-        alert('テキスト上でマーキングしたい文字を指で選択してください。');
+
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        targetRange = selection.getRangeAt(0);
+      } else if (savedRange && savedIndex === index) {
+        targetRange = savedRange;
+      }
+
+      if (!targetRange) {
+        alert('テキスト上でマーキングしたい文字を指で選択してからボタンを押してください。');
         return;
       }
 
-      const range = selection.getRangeAt(0);
       const textEl = document.getElementById(`text-${index}`);
-
-      if (textEl && textEl.contains(range.commonAncestorContainer)) {
+      if (textEl && textEl.contains(targetRange.commonAncestorContainer)) {
         const mark = document.createElement('mark');
         mark.className = `hl-${colorClass}`;
         try {
-          range.surroundContents(mark);
+          targetRange.surroundContents(mark);
           sentences[index].formattedHtml = textEl.innerHTML;
-          selection.removeAllRanges();
+          savedRange = null;
+          savedIndex = null;
+          if (selection) selection.removeAllRanges();
+          renderList();
         } catch (e) {
-          alert('選択範囲が他のタグと重なっています。単語単位で選択してください。');
+          alert('選択範囲が既存のマーカーと部分的に重なっています。単語単位で選択してください。');
         }
+      } else {
+        alert('選択したセンテンスのボタンを押してください。');
       }
     }
 
     function clearMarker(index) {
       sentences[index].formattedHtml = sentences[index].text;
+      savedRange = null;
+      savedIndex = null;
       renderList();
     }
 
@@ -478,7 +509,6 @@
       document.getElementById('remain-time').innerText = secondsToTime(remainSec);
     }
 
-    // ★ 編集状態の保存機能（JSON形式でダウンロード）
     function saveDataFile() {
       const generalNote = document.getElementById('general-note-input').value;
       const exportData = {
@@ -500,7 +530,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // ★ 保存済み編集データの読み込み・復元機能
     function loadSavedFile(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -526,6 +555,7 @@
       reader.readAsText(file);
     }
 
+    // ★ Windows・PC環境でも自動コピペ＆送信対応させたシェア関数
     async function shareResults() {
       const totalTime = document.getElementById('total-time').innerText;
       const cutTime = document.getElementById('cut-time').innerText;
@@ -574,18 +604,27 @@
         text += `\n【カット対象リスト以外のリストについての注記・指示メモ】\n` + otherNotesText;
       }
 
-      if (navigator.share) {
+      // スマホ（iOS/Android）のタッチデバイスかつネイティブ共有が機能する場合
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+      if (isMobile && navigator.share) {
         try {
           await navigator.share({
             title: 'カット指示リスト',
             text: text
           });
         } catch (err) {
-          console.log('共有がキャンセルされました');
+          // キャンセル時などは何もしない
         }
       } else {
-        navigator.clipboard.writeText(text);
-        alert('カット指示テキストをクリップボードにコピーしました。LINE等に貼り付けて送信してください。');
+        // Windows/MacなどのPC環境：確実にクリップボードにコピー
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(() => {
+            alert('カット指示テキストをクリップボードにコピーしました！\n\nGmail、LINE（PC版）、Web版メッセージ等に Ctrl + V で貼り付けて送信してください。');
+          }).catch(err => {
+            alert('コピーに失敗しました。');
+          });
+        }
       }
     }
 
