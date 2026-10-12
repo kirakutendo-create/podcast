@@ -314,7 +314,7 @@
   </div>
 
   <button id="save-data-btn" class="save-data-btn" onclick="saveDataFile()">編集状態を保存 (.json)</button>
-  <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示をLINE・メール等で送信 / コピー</button>
+  <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示を送信 / コピー</button>
   <button id="fulltext-btn" class="fulltext-btn" onclick="copyFullText()">全文表示テキスト（装飾・削除線付き）を出力</button>
 
   <div class="sentence-list" id="sentence-list"></div>
@@ -355,11 +355,7 @@
 
     function copyPrompt() {
       const promptText = document.getElementById('prompt-text').innerText;
-      navigator.clipboard.writeText(promptText).then(() => {
-        alert('プロンプト文面をクリップボードにコピーしました！Geminiに貼り付けてご利用ください。');
-      }).catch(err => {
-        alert('コピーに失敗しました。直接選択してコピーしてください。');
-      });
+      copyToClipboard(promptText, 'プロンプト文面をクリップボードにコピーしました！Geminiに貼り付けてご利用ください。');
     }
 
     function loadData() {
@@ -555,7 +551,36 @@
       reader.readAsText(file);
     }
 
-    // ★ Windows・PC環境でも自動コピペ＆送信対応させたシェア関数
+    // 汎用クリップボードコピー関数（フォールバック機能付き）
+    function copyToClipboard(text, successMsg) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+          alert(successMsg);
+        }).catch(() => {
+          fallbackCopyText(text, successMsg);
+        });
+      } else {
+        fallbackCopyText(text, successMsg);
+      }
+    }
+
+    function fallbackCopyText(text, successMsg) {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        alert(successMsg);
+      } catch (err) {
+        prompt('以下のテキストを選択してコピーしてください（Ctrl + C）：', text);
+      }
+      document.body.removeChild(textArea);
+    }
+
     async function shareResults() {
       const totalTime = document.getElementById('total-time').innerText;
       const cutTime = document.getElementById('cut-time').innerText;
@@ -604,7 +629,7 @@
         text += `\n【カット対象リスト以外のリストについての注記・指示メモ】\n` + otherNotesText;
       }
 
-      // スマホ（iOS/Android）のタッチデバイスかつネイティブ共有が機能する場合
+      // スマホ（iOS / Android）の場合のみOS標準シェア（LINEなど）を呼び出す
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
       if (isMobile && navigator.share) {
@@ -614,17 +639,11 @@
             text: text
           });
         } catch (err) {
-          // キャンセル時などは何もしない
+          // キャンセル時は何もしない
         }
       } else {
-        // Windows/MacなどのPC環境：確実にクリップボードにコピー
-        if (navigator.clipboard) {
-          navigator.clipboard.writeText(text).then(() => {
-            alert('カット指示テキストをクリップボードにコピーしました！\n\nGmail、LINE（PC版）、Web版メッセージ等に Ctrl + V で貼り付けて送信してください。');
-          }).catch(err => {
-            alert('コピーに失敗しました。');
-          });
-        }
+        // Windows/Mac（PC環境）：クリップボードに直接コピー（失敗時はダイアログ表示）
+        copyToClipboard(text, 'カット指示テキストをクリップボードにコピーしました！\n\nGmail、LINE（PC版）、メッセージ等に Ctrl + V で貼り付けてご送信ください。');
       }
     }
 
@@ -646,13 +665,7 @@
         fullText += `No.${idx + 1} [${s.startTime}] ${plainText}\n`;
       });
 
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(fullText).then(() => {
-          alert('取り消し線・装飾付きの全文テキストをクリップボードにコピーしました！');
-        }).catch(err => {
-          alert('コピーに失敗しました。');
-        });
-      }
+      copyToClipboard(fullText, '取り消し線・装飾付きの全文テキストをクリップボードにコピーしました！');
     }
   </script>
 </body>
