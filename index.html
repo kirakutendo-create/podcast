@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ポッドキャスト時間編集シミュレーター</title>
+  <style>
+    :root {
+      --primary: #007aff;
+      --bg: #f2f2f7;
+      --card-bg: #ffffff;
+      --text: #1c1c1e;
+      --border: #e5e5ea;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+      padding-bottom: 60px;
+    }
+    h1 {
+      font-size: 1.2rem;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .status-card {
+      position: sticky;
+      top: 10px;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 14px;
+      padding: 12px 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+    }
+    .status-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .status-label {
+      font-size: 0.75rem;
+      color: #8e8e93;
+      margin-bottom: 2px;
+    }
+    .status-value {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    .status-value.result {
+      color: var(--primary);
+    }
+    .input-section, .general-note-section, .guide-section {
+      background: var(--card-bg);
+      padding: 14px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .general-note-section {
+      display: none; /* データ読み込み後に表示 */
+    }
+    .section-label {
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: #3a3a3c;
+      margin-bottom: 6px;
+      display: block;
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      box-sizing: border-box;
+      font-size: 0.9rem;
+    }
+    textarea.general-note-input {
+      height: 60px;
+    }
+    button {
+      width: 100%;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: bold;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+    button.copy-prompt-btn {
+      background-color: #5856d6;
+      margin-top: 6px;
+      font-size: 0.85rem;
+      padding: 8px;
+    }
+    button.share-btn {
+      background-color: #34c759;
+      margin-bottom: 16px;
+      display: none;
+    }
+    
+    /* 使い方表示スタイル */
+    .guide-title {
+      font-size: 0.95rem;
+      font-weight: bold;
+      color: #1c1c1e;
+      margin-bottom: 8px;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 4px;
+      display: inline-block;
+    }
+    .guide-ol {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #3a3a3c;
+    }
+    .prompt-box {
+      background-color: #f8f8fa;
+      border: 1px solid #d1d1d6;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-top: 6px;
+      color: #48484a;
+      font-family: monospace;
+    }
+
+    .sentence-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sentence-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: opacity 0.2s, background-color 0.2s;
+    }
+    .sentence-card.cut {
+      opacity: 0.55;
+      background: #e9e9eb;
+    }
+    .sentence-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .sentence-card input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      margin-top: 2px;
+      accent-color: #ff3b30;
+      flex-shrink: 0;
+    }
+    .sentence-info {
+      flex: 1;
+    }
+    .sentence-meta {
+      font-size: 0.8rem;
+      color: #8e8e93;
+      margin-bottom: 4px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .sentence-no {
+      background-color: #e5e5ea;
+      color: #3a3a3c;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+    .sentence-text {
+      font-size: 0.95rem;
+      line-height: 1.4;
+    }
+    .note-input {
+      width: 100%;
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      box-sizing: border-box;
+      font-size: 0.85rem;
+      background-color: #fafafa;
+    }
+    .note-input:focus {
+      background-color: #ffffff;
+      outline: none;
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>ポッドキャスト 時間編集シミュレーター</h1>
+
+  <div class="status-card">
+    <div class="status-item">
+      <span class="status-label">全体時間</span>
+      <span id="total-time" class="status-value">00:00</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">削減時間</span>
+      <span id="cut-time" class="status-value" style="color:#ff3b30;">00:00</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">カット後想定</span>
+      <span id="remain-time" class="status-value result">00:00</span>
+    </div>
+  </div>
+
+  <div class="input-section" id="input-container">
+    <textarea id="tsv-input" placeholder="Geminiが出力したTSVデータをここに貼り付けてください"></textarea>
+    <button onclick="loadData()">データを読み込む</button>
+  </div>
+
+  <!-- ★ 追加：このアプリの使用方法エリア -->
+  <div class="guide-section" id="guide-container">
+    <div class="guide-title">このアプリの使用方法</div>
+    <ol class="guide-ol">
+      <li>音声ファイル（MP3/WAVなど）をGeminiにアップロードします。</li>
+      <li>
+        Geminiのプロンプト欄に以下の指示文をコピーして送信します。
+        <div class="prompt-box" id="prompt-text">添付した音声ファイルを読み込み、指定のタブ区切りフォーマット（TSV）で出力してください。
+
+【出力ルール】
+- ヘッダー（項目名）は含めず、1行目からデータのみを出力してください。
+- センテンス（一文）ごとに改行してください。
+- 1列目：そのセンテンスの所要時間（MM:SS 形式、例: 00:08）
+- 2列目：そのセンテンスの開始タイムスタンプ（MM:SS 形式、例: 01:23）
+- 3列目：センテンスのテキスト内容（「えー」「あの」等のフィラーはケバ取り除去）
+
+コードブロック形式で出力してください。</div>
+        <button class="copy-prompt-btn" onclick="copyPrompt()">プロンプト文面をコピー</button>
+      </li>
+      <li>Geminiが出力したTSVデータをコピーし、上のテキストボックスに貼り付けて「データを読み込む」ボタンを押してください。</li>
+    </ol>
+  </div>
+
+  <!-- リスト以外の総括的な注記・指示メモ欄 -->
+  <div class="general-note-section" id="general-note-container">
+    <span class="section-label">リスト以外の総括的な注記・指示メモ</span>
+    <textarea id="general-note-input" class="general-note-input" placeholder="例：オープニングとエンディングにBGMを入れてください、全体的にテンポ感を意識して間を詰めてください 等"></textarea>
+  </div>
+
+  <!-- 共有ボタン -->
+  <button id="share-btn" class="share-btn" onclick="shareResults()">カット指示をLINE・メールで送信</button>
+
+  <div class="sentence-list" id="sentence-list"></div>
+
+  <script>
+    let sentences = [];
+
+    function timeToSeconds(timeStr) {
+      if (!timeStr) return 0;
+      const parts = timeStr.trim().split(':').map(Number);
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      return 0;
+    }
+
+    function secondsToTime(totalSec) {
+      const m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+      const s = Math.floor(totalSec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function copyPrompt() {
+      const promptText = document.getElementById('prompt-text').innerText;
+      navigator.clipboard.writeText(promptText).then(() => {
+        alert('プロンプト文面をクリップボードにコピーしました！Geminiに貼り付けてご利用ください。');
+      }).catch(err => {
+        alert('コピーに失敗しました。直接選択してコピーしてください。');
+      });
+    }
+
+    function loadData() {
+      const rawText = document.getElementById('tsv-input').value.trim();
+      if (!rawText) return;
+
+      const lines = rawText.split('\n');
+      sentences = [];
+
+      lines.forEach((line) => {
+        const cols = line.split('\t');
+        if (cols.length >= 3) {
+          const durationStr = cols[0].trim();
+          const startStr = cols[1].trim();
+          const textStr = cols[2].trim();
+          
+          const sec = timeToSeconds(durationStr);
+          if (sec > 0 || textStr !== "") {
+            sentences.push({
+              durationSec: sec,
+              durationStr: durationStr,
+              startTime: startStr,
+              text: textStr,
+              isCut: false,
+              note: ''
+            });
+          }
+        }
+      });
+
+      if (sentences.length > 0) {
+        document.getElementById('input-container').style.display = 'none';
+        document.getElementById('guide-container').style.display = 'none'; // データ読み込み後は使い方も自動非表示でスッキリ
+        document.getElementById('general-note-container').style.display = 'block';
+        document.getElementById('share-btn').style.display = 'block';
+        renderList();
+        updateCalculations();
+      }
+    }
+
+    function renderList() {
+      const listEl = document.getElementById('sentence-list');
+      listEl.innerHTML = '';
+
+      sentences.forEach((item, index) => {
+        const card = document.createElement('div');
+        card.className = `sentence-card ${item.isCut ? 'cut' : ''}`;
+        
+        card.innerHTML = `
+          <div class="sentence-header">
+            <input type="checkbox" ${item.isCut ? 'checked' : ''} onchange="toggleCut(${index})">
+            <div class="sentence-info">
+              <div class="sentence-meta">
+                <span class="sentence-no">No.${index + 1}</span>
+                <span>[${item.startTime}] 所要時間: ${item.durationStr}</span>
+              </div>
+              <div class="sentence-text">${item.text}</div>
+            </div>
+          </div>
+          <input type="text" class="note-input" placeholder="注記・補足メモ（例：部分カット、単語調整等）" 
+                 value="${item.note}" oninput="updateNote(${index}, this.value)">
+        `;
+        listEl.appendChild(card);
+      });
+    }
+
+    function toggleCut(index) {
+      sentences[index].isCut = !sentences[index].isCut;
+      renderList();
+      updateCalculations();
+    }
+
+    function updateNote(index, val) {
+      sentences[index].note = val;
+    }
+
+    function updateCalculations() {
+      let totalSec = 0;
+      let cutSec = 0;
+
+      sentences.forEach(s => {
+        totalSec += s.durationSec;
+        if (s.isCut) {
+          cutSec += s.durationSec;
+        }
+      });
+
+      const remainSec = Math.max(0, totalSec - cutSec);
+
+      document.getElementById('total-time').innerText = secondsToTime(totalSec);
+      document.getElementById('cut-time').innerText = secondsToTime(cutSec);
+      document.getElementById('remain-time').innerText = secondsToTime(remainSec);
+    }
+
+    async function shareResults() {
+      const totalTime = document.getElementById('total-time').innerText;
+      const cutTime = document.getElementById('cut-time').innerText;
+      const remainTime = document.getElementById('remain-time').innerText;
+      const generalNote = document.getElementById('general-note-input').value.trim();
+
+      let text = `【ポッドキャストカット指示】\n`;
+      text += `■ 元の時間: ${totalTime}\n`;
+      text += `■ 削減時間: ${cutTime}\n`;
+      text += `■ カット後時間: ${remainTime}\n`;
+      text += `------------------------\n`;
+
+      if (generalNote) {
+        text += `【リスト以外の総括的な注記・指示メモ】\n`;
+        text += `${generalNote}\n\n------------------------\n`;
+      }
+      
+      let cutCount = 0;
+      let notesCount = 0;
+
+      text += `【カット対象リスト】\n`;
+      sentences.forEach((s, idx) => {
+        if (s.isCut) {
+          cutCount++;
+          let line = `・No.${idx + 1} [${s.startTime}] (${s.durationStr}) ${s.text}`;
+          if (s.note) {
+            line += `\n   └ 注記: ${s.note}`;
+          }
+          text += line + `\n`;
+        }
+      });
+
+      if (cutCount === 0) {
+        text += `（削除チェックされたセンテンスはありません）\n`;
+      }
+
+      let otherNotesText = '';
+      sentences.forEach((s, idx) => {
+        if (!s.isCut && s.note) {
+          notesCount++;
+          otherNotesText += `・No.${idx + 1} [${s.startTime}] ${s.text}\n   └ 注記: ${s.note}\n`;
+        }
+      });
+
+      if (notesCount > 0) {
+        text += `\n【カット対象リスト以外のリストについての注記・指示メモ】\n` + otherNotesText;
+      }
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'カット指示リスト',
+            text: text
+          });
+        } catch (err) {
+          console.log('共有がキャンセルされました');
+        }
+      } else {
+        navigator.clipboard.writeText(text);
+        alert('カット指示テキストをクリップボードにコピーしました。LINE等に貼り付けて送信してください。');
+      }
+    }
+  </script>
+</body>
+</html>
